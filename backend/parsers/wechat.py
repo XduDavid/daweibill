@@ -89,21 +89,47 @@ def parse_wechat_xlsx(filepath):
         Exception: 解析失败时抛出异常
     """
     try:
-        # 微信账单通常头部有16行说明，第17行是标题
-        df = pd.read_excel(filepath, header=16, engine='openpyxl')
+        # 先读取所有行查找表头位置（自适应支持不同版本微信导出格式）
+        all_df = pd.read_excel(filepath, header=None, engine='openpyxl')
+        header_row = None
 
-        # 检查是否是有效的微信账单（检查关键列）
-        if '交易时间' not in df.columns or '金额(元)' not in df.columns:
-            raise ValueError("不是有效的微信账单文件")
+        # 在前30行中查找包含关键列名的表头行
+        for i in range(min(30, len(all_df))):
+            row_str = str(all_df.iloc[i])
+            if '交易时间' in row_str and ('金额' in row_str):
+                header_row = i
+                break
+
+        if header_row is None:
+            raise ValueError("不是有效的微信账单文件，无法找到表头")
+
+        # 使用正确的表头行读取数据
+        df = pd.read_excel(filepath, header=header_row, engine='openpyxl')
+
+        # 检查是否是有效的微信账单（检查关键列，支持多种列名变种）
+        if '交易时间' not in df.columns:
+            raise ValueError("不是有效的微信账单文件，缺少'交易时间'列")
+
+        # 处理金额列名的不同变体
+        amount_col = None
+        if '金额(元)' in df.columns:
+            amount_col = '金额(元)'
+        elif '金额' in df.columns:
+            amount_col = '金额'
+
+        if amount_col is None:
+            raise ValueError("不是有效的微信账单文件，缺少金额列")
 
         # 映射列名以匹配支付宝格式
-        df = df.rename(columns={
+        rename_map = {
             '交易类型': '交易分类',
             '商品': '商品说明',
-            '金额(元)': '金额',
             '当前状态': '交易状态',
             '支付方式': '收/付款方式'
-        })
+        }
+        # 金额列可能有不同名称
+        rename_map[amount_col] = '金额'
+        df = df.rename(columns=rename_map)
 
         # 清理金额列 (移除 '¥' 和 ',')
         df['金额'] = df['金额'].astype(str).str.replace('¥', '').str.replace(',', '').astype(float)
