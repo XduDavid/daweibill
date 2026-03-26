@@ -62,3 +62,7 @@ docs/base/
 runtime/
 runtime_backup/
 
+# 用户账单文件（保护隐私）
+*.xlsx
+*.csv
+
